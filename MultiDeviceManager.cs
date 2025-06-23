@@ -6,6 +6,20 @@ using System.Linq;
 namespace BluetoothSerialSender
 {
     /// <summary>
+    /// 送信結果を表すクラス
+    /// </summary>
+    public class SendResult
+    {
+        public List<string> SuccessfulPorts { get; } = new List<string>();
+        public Dictionary<string, string> FailedPorts { get; } = new Dictionary<string, string>();
+        
+        public bool IsAllSuccessful => FailedPorts.Count == 0;
+        public int TotalAttempts => SuccessfulPorts.Count + FailedPorts.Count;
+        public int SuccessCount => SuccessfulPorts.Count;
+        public int FailureCount => FailedPorts.Count;
+    }
+
+    /// <summary>
     /// 複数のシリアルポートデバイスを管理するクラス
     /// </summary>
     public class MultiDeviceManager : IDisposable
@@ -111,10 +125,11 @@ namespace BluetoothSerialSender
         /// <summary>
         /// すべての接続されたデバイスにデータを送信
         /// </summary>
-        public void WriteToAllDevices(byte[] data)
+        public SendResult WriteToAllDevices(byte[] data)
         {
             lock (_lockObject)
             {
+                var result = new SendResult();
                 var failedPorts = new List<string>();
 
                 foreach (var kvp in _connectedDevices)
@@ -124,10 +139,17 @@ namespace BluetoothSerialSender
                         if (kvp.Value.IsOpen)
                         {
                             kvp.Value.Write(data, 0, data.Length);
+                            result.SuccessfulPorts.Add(kvp.Key);
+                        }
+                        else
+                        {
+                            result.FailedPorts.Add(kvp.Key, "ポートが閉じられています");
+                            failedPorts.Add(kvp.Key);
                         }
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
+                        result.FailedPorts.Add(kvp.Key, ex.Message);
                         failedPorts.Add(kvp.Key);
                     }
                 }
@@ -137,6 +159,8 @@ namespace BluetoothSerialSender
                 {
                     DisconnectDevice(portName);
                 }
+
+                return result;
             }
         }
 

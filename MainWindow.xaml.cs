@@ -123,6 +123,7 @@ namespace BluetoothSerialSender
         private void UpdateConnectionStatus()
         {
             int count = _deviceManager.ConnectedDeviceCount;
+            var connectedPorts = _deviceManager.ConnectedPorts;
             
             if (count == 0)
             {
@@ -133,7 +134,7 @@ namespace BluetoothSerialSender
             }
             else
             {
-                ConnectionStatusText.Text = $"{count}台接続中";
+                ConnectionStatusText.Text = $"{count}台接続中 [{string.Join(", ", connectedPorts)}]";
                 ConnectionStatusText.Foreground = System.Windows.Media.Brushes.Green;
                 DisconnectAllButton.IsEnabled = true;
                 ManualSendButton.IsEnabled = true;
@@ -349,8 +350,41 @@ namespace BluetoothSerialSender
             try
             {
                 byte[] dataArray = new byte[] { data };
-                _deviceManager.WriteToAllDevices(dataArray);
-                LogMessage($"送信: {data} (0x{data:X2}) → {_deviceManager.ConnectedDeviceCount}台");
+                var result = _deviceManager.WriteToAllDevices(dataArray);
+                
+                // 詳細な送信ログを出力
+                if (result.IsAllSuccessful)
+                {
+                    LogMessage($"送信成功: {data} (0x{data:X2}) → {result.SuccessCount}台 [{string.Join(", ", result.SuccessfulPorts)}]");
+                }
+                else
+                {
+                    LogMessage($"送信: {data} (0x{data:X2}) → 成功:{result.SuccessCount}台, 失敗:{result.FailureCount}台");
+                    
+                    if (result.SuccessfulPorts.Count > 0)
+                    {
+                        LogMessage($"  成功: [{string.Join(", ", result.SuccessfulPorts)}]");
+                    }
+                    
+                    if (result.FailedPorts.Count > 0)
+                    {
+                        foreach (var failed in result.FailedPorts)
+                        {
+                            LogMessage($"  失敗: {failed.Key} - {failed.Value}");
+                        }
+                    }
+                }
+                
+                // 接続状況が変わった場合、UIを更新
+                if (result.FailureCount > 0)
+                {
+                    // 失敗したデバイスが切断されたので、接続デバイスリストを更新
+                    foreach (var failedPort in result.FailedPorts.Keys)
+                    {
+                        _connectedDevices.Remove(failedPort);
+                    }
+                    UpdateConnectionStatus();
+                }
             }
             catch (Exception ex)
             {
